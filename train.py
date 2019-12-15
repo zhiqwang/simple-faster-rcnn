@@ -23,7 +23,7 @@ import time
 
 import torch
 import torch.utils.data
-from torch import nn
+
 import torchvision
 import torchvision.models.detection
 import torchvision.models.detection.mask_rcnn
@@ -39,7 +39,7 @@ import transforms as T
 
 def get_dataset(name, image_set, transform, data_path):
     paths = {
-        "coco": (data_path, get_coco, 91),
+        "coco": (data_path, get_coco, 7),
         "coco_kp": (data_path, get_coco_kp, 2)
     }
     p, ds_fn, num_classes = paths[name]
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=__doc__)
 
-    parser.add_argument('--data-path', default='/datasets01/COCO/022719/', help='dataset')
+    parser.add_argument('--data-path', default='./data-bin/pinochle/', help='dataset')
     parser.add_argument('--dataset', default='coco', help='dataset')
     parser.add_argument('--model', default='maskrcnn_resnet50_fpn', help='model')
     parser.add_argument('--device', default='cuda', help='device')
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr-steps', default=[16, 22], nargs='+', type=int, help='decrease lr every step-size epochs')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--print-freq', default=20, type=int, help='print frequency')
-    parser.add_argument('--output-dir', default='.', help='path where to save')
+    parser.add_argument('--output-dir', default='./checkpoints', help='path where to save')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--aspect-ratio-group-factor', default=3, type=int)
     parser.add_argument(
