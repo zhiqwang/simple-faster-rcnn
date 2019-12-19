@@ -24,9 +24,7 @@ import time
 import torch
 import torch.utils.data
 
-import torchvision
-import torchvision.models.detection
-import torchvision.models.detection.mask_rcnn
+import models
 
 from coco_utils import get_coco, get_coco_kp
 
@@ -93,8 +91,10 @@ def main(args):
         collate_fn=utils.collate_fn)
 
     print("Creating model")
-    model = torchvision.models.detection.__dict__[args.model](num_classes=num_classes,
-                                                              pretrained=args.pretrained)
+    model = models.detection.__dict__[args.model](
+        num_classes=num_classes,
+        pretrained=args.pretrained,
+    )
     model.to(device)
 
     model_without_ddp = model
