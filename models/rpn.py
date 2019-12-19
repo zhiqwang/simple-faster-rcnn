@@ -1,5 +1,3 @@
-from __future__ import division
-
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 import torch
 from torch.nn import functional as F
@@ -184,8 +182,8 @@ class RPNHead(nn.Module):
         )
 
         for l in self.children():
-            torch.nn.init.normal_(l.weight, std=0.01)
-            torch.nn.init.constant_(l.bias, 0)
+            nn.init.normal_(l.weight, std=0.01)
+            nn.init.constant_(l.bias, 0)
 
     def forward(self, x):
         # type: (List[Tensor])
@@ -238,7 +236,7 @@ def concat_box_prediction_layers(box_cls, box_regression):
     return box_cls, box_regression
 
 
-class RegionProposalNetwork(torch.nn.Module):
+class RegionProposalNetwork(nn.Module):
     """
     Implements Region Proposal Network (RPN).
 
@@ -455,14 +453,18 @@ class RegionProposalNetwork(torch.nn.Module):
 
         num_images = len(anchors)
         num_anchors_per_level = [o[0].numel() for o in objectness]
-        objectness, pred_bbox_deltas = \
-            concat_box_prediction_layers(objectness, pred_bbox_deltas)
+        objectness, pred_bbox_deltas = concat_box_prediction_layers(
+            objectness, pred_bbox_deltas,
+        )
         # apply pred_bbox_deltas to anchors to obtain the decoded proposals
         # note that we detach the deltas because Faster R-CNN do not backprop through
         # the proposals
         proposals = self.box_coder.decode(pred_bbox_deltas.detach(), anchors)
         proposals = proposals.view(num_images, -1, 4)
-        boxes, scores = self.filter_proposals(proposals, objectness, images.image_sizes, num_anchors_per_level)
+        boxes, scores = self.filter_proposals(
+            proposals, objectness, images.image_sizes,
+            num_anchors_per_level,
+        )
 
         losses = {}
         if self.training:
