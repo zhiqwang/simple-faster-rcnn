@@ -91,7 +91,7 @@ def main(args):
         collate_fn=utils.collate_fn)
 
     print("Creating model")
-    model = models.detection.__dict__[args.model](
+    model = models.__dict__[args.model](
         num_classes=num_classes,
         pretrained=args.pretrained,
     )
