@@ -1,7 +1,7 @@
 from torch import nn
 import torch.nn.functional as F
 
-from torchvision.ops import MultiScaleRoIAlign
+from ops import MultiScaleRoIAlign
 
 from torchvision.models.utils import load_state_dict_from_url
 

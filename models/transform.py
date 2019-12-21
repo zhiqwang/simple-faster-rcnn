@@ -3,7 +3,7 @@ import torch
 from torch import nn, Tensor
 from torch.jit.annotations import List, Tuple, Dict, Optional
 
-from torchvision.ops import misc as misc_nn_ops
+from ops import misc as misc_nn_ops
 from .image_list import ImageList
 from .roi_heads import paste_masks_in_image
 

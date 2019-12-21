@@ -1,7 +1,7 @@
 from torch import nn
-from torchvision.ops.feature_pyramid_network import FeaturePyramidNetwork, LastLevelMaxPool
+from ops.feature_pyramid_network import FeaturePyramidNetwork, LastLevelMaxPool
 
-from torchvision.ops import misc as misc_nn_ops
+from ops import misc as misc_nn_ops
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.models import resnet
 

@@ -3,10 +3,10 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from torchvision.ops import boxes as box_ops
-from torchvision.ops import misc as misc_nn_ops
+from ops import boxes as box_ops
+from ops import misc as misc_nn_ops
 
-from torchvision.ops import roi_align
+from ops import roi_align
 
 from torchvision.models.detection import _utils as det_utils
 
