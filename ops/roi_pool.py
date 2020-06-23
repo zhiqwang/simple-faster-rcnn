@@ -1,46 +1,16 @@
 import torch
-from torch import nn
-
-from torch.autograd import Function
-from torch.autograd.function import once_differentiable
+from torch import nn, Tensor
 
 from torch.nn.modules.utils import _pair
+from torch.jit.annotations import BroadcastingList2
 
-from torchvision.extension import _lazy_import
-from ._utils import convert_boxes_to_roi_format
-
-
-class _RoIPoolFunction(Function):
-    @staticmethod
-    def forward(ctx, input, rois, output_size, spatial_scale):
-        ctx.output_size = _pair(output_size)
-        ctx.spatial_scale = spatial_scale
-        ctx.input_shape = input.size()
-        _C = _lazy_import()
-        output, argmax = _C.roi_pool_forward(
-            input, rois, spatial_scale,
-            output_size[0], output_size[1])
-        ctx.save_for_backward(rois, argmax)
-        return output
-
-    @staticmethod
-    @once_differentiable
-    def backward(ctx, grad_output):
-        rois, argmax = ctx.saved_tensors
-        output_size = ctx.output_size
-        spatial_scale = ctx.spatial_scale
-        bs, ch, h, w = ctx.input_shape
-        _C = _lazy_import()
-        grad_input = _C.roi_pool_backward(
-            grad_output, rois, argmax, spatial_scale,
-            output_size[0], output_size[1], bs, ch, h, w)
-        return grad_input, None, None, None
+from ._utils import convert_boxes_to_roi_format, check_roi_boxes_shape
 
 
 def roi_pool(input, boxes, output_size, spatial_scale=1.0):
+    # type: (Tensor, Tensor, BroadcastingList2[int], float) -> Tensor
     """
     Performs Region of Interest (RoI) Pool operator described in Fast R-CNN
-
     Arguments:
         input (Tensor[N, C, H, W]): input tensor
         boxes (Tensor[K, 5] or List[Tensor[L, 4]]): the box coordinates in (x1, y1, x2, y2)
@@ -52,14 +22,17 @@ def roi_pool(input, boxes, output_size, spatial_scale=1.0):
             is performed, as (height, width)
         spatial_scale (float): a scaling factor that maps the input coordinates to
             the box coordinates. Default: 1.0
-
     Returns:
         output (Tensor[K, C, output_size[0], output_size[1]])
     """
+    check_roi_boxes_shape(boxes)
     rois = boxes
+    output_size = _pair(output_size)
     if not isinstance(rois, torch.Tensor):
         rois = convert_boxes_to_roi_format(rois)
-    return _RoIPoolFunction.apply(input, rois, output_size, spatial_scale)
+    output, _ = torch.ops.torchvision.roi_pool(input, rois, spatial_scale,
+                                               output_size[0], output_size[1])
+    return output
 
 
 class RoIPool(nn.Module):

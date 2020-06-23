@@ -3,7 +3,8 @@ import torch
 from torch.nn import functional as F
 from torch import nn, Tensor
 
-from ops import boxes as box_ops
+import torchvision
+from torchvision.ops import boxes as box_ops
 
 from torchvision.models.detection import _utils as det_utils
 from .image_list import ImageList
@@ -16,11 +17,9 @@ def _onnx_get_num_anchors_and_pre_nms_top_n(ob, orig_pre_nms_top_n):
     # type: (Tensor, int) -> Tuple[int, int]
     from torch.onnx import operators
     num_anchors = operators.shape_as_tensor(ob)[1].unsqueeze(0)
-    # TODO : remove cast to IntTensor/num_anchors.dtype when
-    #        ONNX Runtime version is updated with ReduceMin int64 support
     pre_nms_top_n = torch.min(torch.cat(
         (torch.tensor([orig_pre_nms_top_n], dtype=num_anchors.dtype),
-         num_anchors), 0).to(torch.int32)).to(num_anchors.dtype)
+         num_anchors), 0))
 
     return num_anchors, pre_nms_top_n
 
@@ -34,17 +33,14 @@ class AnchorGenerator(nn.Module):
     """
     Module that generates anchors for a set of feature maps and
     image sizes.
-
     The module support computing anchors at multiple sizes and aspect ratios
-    per feature map.
-
+    per feature map. This module assumes aspect ratio = height / width for
+    each anchor.
     sizes and aspect_ratios should have the same number of elements, and it should
     correspond to the number of feature maps.
-
     sizes[i] and aspect_ratios[i] can have an arbitrary number of elements,
     and AnchorGenerator will output a set of sizes[i] * aspect_ratios[i] anchors
     per spatial location for feature map i.
-
     Arguments:
         sizes (Tuple[Tuple[int]]):
         aspect_ratios (Tuple[Tuple[float]]):
@@ -71,8 +67,11 @@ class AnchorGenerator(nn.Module):
         self._cache = {}
 
     # TODO: https://github.com/pytorch/pytorch/issues/26792
+    # For every (aspect_ratios, scales) combination, output a zero-centered anchor with those values.
+    # (scales, aspect_ratios) are usually an element of zip(self.scales, self.aspect_ratios)
+    # This method assumes aspect ratio = height / width for an anchor.
     def generate_anchors(self, scales, aspect_ratios, dtype=torch.float32, device="cpu"):
-        # type: (List[int], List[float], int, Device)  # noqa: F821
+        # type: (List[int], List[float], int, Device) -> Tensor  # noqa: F821
         scales = torch.as_tensor(scales, dtype=dtype, device=device)
         aspect_ratios = torch.as_tensor(aspect_ratios, dtype=dtype, device=device)
         h_ratios = torch.sqrt(aspect_ratios)
@@ -85,9 +84,14 @@ class AnchorGenerator(nn.Module):
         return base_anchors.round()
 
     def set_cell_anchors(self, dtype, device):
-        # type: (int, Device) -> None    # noqa: F821
+        # type: (int, Device) -> None  # noqa: F821
         if self.cell_anchors is not None:
-            return
+            cell_anchors = self.cell_anchors
+            assert cell_anchors is not None
+            # suppose that all anchors have the same device
+            # which is a valid assumption in the current state of the codebase
+            if cell_anchors[0].device == device:
+                return
 
         cell_anchors = [
             self.generate_anchors(
@@ -103,8 +107,10 @@ class AnchorGenerator(nn.Module):
     def num_anchors_per_location(self):
         return [len(s) * len(a) for s, a in zip(self.sizes, self.aspect_ratios)]
 
+    # For every combination of (a, (g, s), i) in (self.cell_anchors, zip(grid_sizes, strides), 0:2),
+    # output g[i] anchors that are s[i] distance apart in direction i, with the same dimensions as a.
     def grid_anchors(self, grid_sizes, strides):
-        # type: (List[List[int]], List[List[int]])
+        # type: (List[List[int]], List[List[Tensor]]) -> List[Tensor]
         anchors = []
         cell_anchors = self.cell_anchors
         assert cell_anchors is not None
@@ -114,8 +120,9 @@ class AnchorGenerator(nn.Module):
         ):
             grid_height, grid_width = size
             stride_height, stride_width = stride
-
             device = base_anchors.device
+
+            # For output anchor, compute [x_center, y_center, x_center, y_center]
             shifts_x = torch.arange(
                 0, grid_width, dtype=torch.float32, device=device
             ) * stride_width
@@ -127,6 +134,8 @@ class AnchorGenerator(nn.Module):
             shift_y = shift_y.reshape(-1)
             shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=1)
 
+            # For every (base anchor, output anchor) pair,
+            # offset each zero-centered base anchor by the center of the output anchor.
             anchors.append(
                 (shifts.view(-1, 1, 4) + base_anchors.view(1, -1, 4)).reshape(-1, 4)
             )
@@ -134,8 +143,8 @@ class AnchorGenerator(nn.Module):
         return anchors
 
     def cached_grid_anchors(self, grid_sizes, strides):
-        # type: (List[List[int]], List[List[int]])
-        key = str(grid_sizes + strides)
+        # type: (List[List[int]], List[List[Tensor]]) -> List[Tensor]
+        key = str(grid_sizes) + str(strides)
         if key in self._cache:
             return self._cache[key]
         anchors = self.grid_anchors(grid_sizes, strides)
@@ -143,11 +152,12 @@ class AnchorGenerator(nn.Module):
         return anchors
 
     def forward(self, image_list, feature_maps):
-        # type: (ImageList, List[Tensor])
+        # type: (ImageList, List[Tensor]) -> List[Tensor]
         grid_sizes = list([feature_map.shape[-2:] for feature_map in feature_maps])
         image_size = image_list.tensors.shape[-2:]
-        strides = [[int(image_size[0] / g[0]), int(image_size[1] / g[1])] for g in grid_sizes]
         dtype, device = feature_maps[0].dtype, feature_maps[0].device
+        strides = [[torch.tensor(image_size[0] // g[0], dtype=torch.int64, device=device),
+                    torch.tensor(image_size[1] // g[1], dtype=torch.int64, device=device)] for g in grid_sizes]
         self.set_cell_anchors(dtype, device)
         anchors_over_all_feature_maps = self.cached_grid_anchors(grid_sizes, strides)
         anchors = torch.jit.annotate(List[List[torch.Tensor]], [])
@@ -165,7 +175,6 @@ class AnchorGenerator(nn.Module):
 class RPNHead(nn.Module):
     """
     Adds a simple RPN Head with classification and regression heads
-
     Arguments:
         in_channels (int): number of channels of the input feature
         num_anchors (int): number of anchors to be predicted
@@ -181,12 +190,12 @@ class RPNHead(nn.Module):
             in_channels, num_anchors * 4, kernel_size=1, stride=1
         )
 
-        for l in self.children():
-            nn.init.normal_(l.weight, std=0.01)
-            nn.init.constant_(l.bias, 0)
+        for layer in self.children():
+            torch.nn.init.normal_(layer.weight, std=0.01)
+            torch.nn.init.constant_(layer.bias, 0)
 
     def forward(self, x):
-        # type: (List[Tensor])
+        # type: (List[Tensor]) -> Tuple[List[Tensor], List[Tensor]]
         logits = []
         bbox_reg = []
         for feature in x:
@@ -197,7 +206,7 @@ class RPNHead(nn.Module):
 
 
 def permute_and_flatten(layer, N, A, C, H, W):
-    # type: (Tensor, int, int, int, int, int)
+    # type: (Tensor, int, int, int, int, int) -> Tensor
     layer = layer.view(N, -1, C, H, W)
     layer = layer.permute(0, 3, 4, 1, 2)
     layer = layer.reshape(N, -1, C)
@@ -205,7 +214,7 @@ def permute_and_flatten(layer, N, A, C, H, W):
 
 
 def concat_box_prediction_layers(box_cls, box_regression):
-    # type: (List[Tensor], List[Tensor])
+    # type: (List[Tensor], List[Tensor]) -> Tuple[Tensor, Tensor]
     box_cls_flattened = []
     box_regression_flattened = []
     # for each feature level, permute the outputs to make them be in the
@@ -236,10 +245,9 @@ def concat_box_prediction_layers(box_cls, box_regression):
     return box_cls, box_regression
 
 
-class RegionProposalNetwork(nn.Module):
+class RegionProposalNetwork(torch.nn.Module):
     """
     Implements Region Proposal Network (RPN).
-
     Arguments:
         anchor_generator (AnchorGenerator): module that generates the anchors for a set of feature
             maps.
@@ -259,7 +267,6 @@ class RegionProposalNetwork(nn.Module):
             contain two fields: training and testing, to allow for different values depending
             on training or evaluation
         nms_thresh (float): NMS threshold used for postprocessing the RPN proposals
-
     """
     __annotations__ = {
         'box_coder': det_utils.BoxCoder,
@@ -311,48 +318,58 @@ class RegionProposalNetwork(nn.Module):
         return self._post_nms_top_n['testing']
 
     def assign_targets_to_anchors(self, anchors, targets):
-        # type: (List[Tensor], List[Dict[str, Tensor]])
+        # type: (List[Tensor], List[Dict[str, Tensor]]) -> Tuple[List[Tensor], List[Tensor]]
         labels = []
         matched_gt_boxes = []
         for anchors_per_image, targets_per_image in zip(anchors, targets):
             gt_boxes = targets_per_image["boxes"]
-            match_quality_matrix = box_ops.box_iou(gt_boxes, anchors_per_image)
-            matched_idxs = self.proposal_matcher(match_quality_matrix)
-            # get the targets corresponding GT for each proposal
-            # NB: need to clamp the indices because we can have a single
-            # GT in the image, and matched_idxs can be -2, which goes
-            # out of bounds
-            matched_gt_boxes_per_image = gt_boxes[matched_idxs.clamp(min=0)]
 
-            labels_per_image = matched_idxs >= 0
-            labels_per_image = labels_per_image.to(dtype=torch.float32)
+            if gt_boxes.numel() == 0:
+                # Background image (negative example)
+                device = anchors_per_image.device
+                matched_gt_boxes_per_image = torch.zeros(anchors_per_image.shape, dtype=torch.float32, device=device)
+                labels_per_image = torch.zeros((anchors_per_image.shape[0],), dtype=torch.float32, device=device)
+            else:
+                match_quality_matrix = box_ops.box_iou(gt_boxes, anchors_per_image)
+                matched_idxs = self.proposal_matcher(match_quality_matrix)
+                # get the targets corresponding GT for each proposal
+                # NB: need to clamp the indices because we can have a single
+                # GT in the image, and matched_idxs can be -2, which goes
+                # out of bounds
+                matched_gt_boxes_per_image = gt_boxes[matched_idxs.clamp(min=0)]
 
-            # Background (negative examples)
-            bg_indices = matched_idxs == self.proposal_matcher.BELOW_LOW_THRESHOLD
-            labels_per_image[bg_indices] = torch.tensor(0.0)
+                labels_per_image = matched_idxs >= 0
+                labels_per_image = labels_per_image.to(dtype=torch.float32)
 
-            # discard indices that are between thresholds
-            inds_to_discard = matched_idxs == self.proposal_matcher.BETWEEN_THRESHOLDS
-            labels_per_image[inds_to_discard] = torch.tensor(-1.0)
+                # Background (negative examples)
+                bg_indices = matched_idxs == self.proposal_matcher.BELOW_LOW_THRESHOLD
+                labels_per_image[bg_indices] = 0.0
+
+                # discard indices that are between thresholds
+                inds_to_discard = matched_idxs == self.proposal_matcher.BETWEEN_THRESHOLDS
+                labels_per_image[inds_to_discard] = -1.0
 
             labels.append(labels_per_image)
             matched_gt_boxes.append(matched_gt_boxes_per_image)
         return labels, matched_gt_boxes
 
     def _get_top_n_idx(self, objectness, num_anchors_per_level):
-        # type: (Tensor, List[int])
+        # type: (Tensor, List[int]) -> Tensor
         r = []
         offset = 0
         for ob in objectness.split(num_anchors_per_level, 1):
-            num_anchors = ob.shape[1]
-            pre_nms_top_n = min(self.pre_nms_top_n(), num_anchors)
+            if torchvision._is_tracing():
+                num_anchors, pre_nms_top_n = _onnx_get_num_anchors_and_pre_nms_top_n(ob, self.pre_nms_top_n())
+            else:
+                num_anchors = ob.shape[1]
+                pre_nms_top_n = min(self.pre_nms_top_n(), num_anchors)
             _, top_n_idx = ob.topk(pre_nms_top_n, dim=1)
             r.append(top_n_idx + offset)
             offset += num_anchors
         return torch.cat(r, dim=1)
 
     def filter_proposals(self, proposals, objectness, image_shapes, num_anchors_per_level):
-        # type: (Tensor, Tensor, List[Tuple[int, int]], List[int])
+        # type: (Tensor, Tensor, List[Tuple[int, int]], List[int]) -> Tuple[List[Tensor], List[Tensor]]
         num_images = proposals.shape[0]
         device = proposals.device
         # do not backprop throught objectness
@@ -392,14 +409,13 @@ class RegionProposalNetwork(nn.Module):
         return final_boxes, final_scores
 
     def compute_loss(self, objectness, pred_bbox_deltas, labels, regression_targets):
-        # type: (Tensor, Tensor, List[Tensor], List[Tensor])
+        # type: (Tensor, Tensor, List[Tensor], List[Tensor]) -> Tuple[Tensor, Tensor]
         """
         Arguments:
             objectness (Tensor)
             pred_bbox_deltas (Tensor)
             labels (List[Tensor])
             regression_targets (List[Tensor])
-
         Returns:
             objectness_loss (Tensor)
             box_loss (Tensor)
@@ -416,10 +432,11 @@ class RegionProposalNetwork(nn.Module):
         labels = torch.cat(labels, dim=0)
         regression_targets = torch.cat(regression_targets, dim=0)
 
-        box_loss = F.l1_loss(
+        box_loss = det_utils.smooth_l1_loss(
             pred_bbox_deltas[sampled_pos_inds],
             regression_targets[sampled_pos_inds],
-            reduction="sum",
+            beta=1 / 9,
+            size_average=False,
         ) / (sampled_inds.numel())
 
         objectness_loss = F.binary_cross_entropy_with_logits(
@@ -428,18 +445,21 @@ class RegionProposalNetwork(nn.Module):
 
         return objectness_loss, box_loss
 
-    def forward(self, images, features, targets=None):
-        # type: (ImageList, Dict[str, Tensor], Optional[List[Dict[str, Tensor]]])
+    def forward(self,
+                images,       # type: ImageList
+                features,     # type: Dict[str, Tensor]
+                targets=None  # type: Optional[List[Dict[str, Tensor]]]
+                ):
+        # type: (...) -> Tuple[List[Tensor], Dict[str, Tensor]]
         """
         Arguments:
             images (ImageList): images for which we want to compute the predictions
-            features (List[Tensor]): features computed from the images that are
+            features (OrderedDict[Tensor]): features computed from the images that are
                 used for computing the predictions. Each tensor in the list
                 correspond to different feature levels
             targets (List[Dict[Tensor]]): ground-truth boxes present in the image (optional).
                 If provided, each element in the dict should contain a field `boxes`,
                 with the locations of the ground-truth boxes.
-
         Returns:
             boxes (List[Tensor]): the predicted boxes from the RPN, one Tensor per
                 image.
@@ -452,19 +472,16 @@ class RegionProposalNetwork(nn.Module):
         anchors = self.anchor_generator(images, features)
 
         num_images = len(anchors)
-        num_anchors_per_level = [o[0].numel() for o in objectness]
-        objectness, pred_bbox_deltas = concat_box_prediction_layers(
-            objectness, pred_bbox_deltas,
-        )
+        num_anchors_per_level_shape_tensors = [o[0].shape for o in objectness]
+        num_anchors_per_level = [s[0] * s[1] * s[2] for s in num_anchors_per_level_shape_tensors]
+        objectness, pred_bbox_deltas = \
+            concat_box_prediction_layers(objectness, pred_bbox_deltas)
         # apply pred_bbox_deltas to anchors to obtain the decoded proposals
         # note that we detach the deltas because Faster R-CNN do not backprop through
         # the proposals
         proposals = self.box_coder.decode(pred_bbox_deltas.detach(), anchors)
         proposals = proposals.view(num_images, -1, 4)
-        boxes, scores = self.filter_proposals(
-            proposals, objectness, images.image_sizes,
-            num_anchors_per_level,
-        )
+        boxes, scores = self.filter_proposals(proposals, objectness, images.image_sizes, num_anchors_per_level)
 
         losses = {}
         if self.training:
