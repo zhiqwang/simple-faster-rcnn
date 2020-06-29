@@ -6,7 +6,7 @@ from torch import nn, Tensor
 import torchvision
 from torchvision.ops import boxes as box_ops
 
-from torchvision.models.detection import _utils as det_utils
+from . import _utils as det_utils
 from .image_list import ImageList
 
 from torch.jit.annotations import List, Optional, Dict, Tuple
