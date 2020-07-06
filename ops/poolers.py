@@ -2,8 +2,8 @@
 import torch
 from torch import nn, Tensor
 
-from torchvision.ops import roi_align
-from torchvision.ops.boxes import box_area
+from ops import roi_align
+from ops.boxes import box_area
 
 from torch.jit.annotations import Optional, List, Dict, Tuple
 import torchvision
@@ -206,7 +206,7 @@ class MultiScaleRoIAlign(nn.Module):
 
         tracing_results = []
         for level, (per_level_feature, scale) in enumerate(zip(x_filtered, scales)):
-            idx_in_level = torch.nonzero(levels == level, as_tuple=False).squeeze(1)
+            idx_in_level = torch.nonzero(levels == level).squeeze(1)
             rois_per_level = rois[idx_in_level]
 
             result_idx_in_level = roi_align(

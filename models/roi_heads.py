@@ -4,9 +4,8 @@ import torchvision
 import torch.nn.functional as F
 from torch import Tensor
 
-from torchvision.ops import boxes as box_ops
-
-from torchvision.ops import roi_align
+from ops import boxes as box_ops
+from ops import roi_align
 
 from . import _utils as det_utils
 
@@ -695,7 +694,7 @@ class RoIHeads(torch.nn.Module):
             labels = labels.reshape(-1)
 
             # remove low scoring boxes
-            inds = torch.nonzero(scores > self.score_thresh, as_tuple=False).squeeze(1)
+            inds = torch.nonzero(scores > self.score_thresh).squeeze(1)
             boxes, scores, labels = boxes[inds], scores[inds], labels[inds]
 
             # remove empty boxes
