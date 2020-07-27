@@ -1,5 +1,7 @@
 # Object detection reference training scripts
 
+Note: This repo is a copy of [pytorch/torchvision](http://github.com/pytorch/vision/blob/master/torchvision/models/detection).
+
 This folder contains reference training scripts for object detection.
 They serve as a log of how to train specific models, as provide baseline
 training and evaluation scripts to quickly bootstrap research.
