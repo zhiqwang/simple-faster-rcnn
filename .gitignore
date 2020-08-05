@@ -4,7 +4,6 @@ checkpoints
 logs
 *.ipynb
 runs
-models/networks/DCN2
 
 # macOS dir files
 .DS_Store
@@ -38,8 +37,13 @@ __pycache__
 *.pyc
 *.pyd
 
-# Compiled MATLAB
-*.mex*
+# Compiled cpp directory
+build
+
+# Executables
+*.exe
+*.out
+*.app
 
 # IPython notebook checkpoints
 .ipynb_checkpoints
