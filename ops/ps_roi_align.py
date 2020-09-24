@@ -6,11 +6,17 @@ from torch.nn.modules.utils import _pair
 from ._utils import convert_boxes_to_roi_format, check_roi_boxes_shape
 
 
-def ps_roi_align(input, boxes, output_size, spatial_scale=1.0, sampling_ratio=-1):
-    # type: (Tensor, Tensor, int, float, int) -> Tensor
+def ps_roi_align(
+    input: Tensor,
+    boxes: Tensor,
+    output_size: int,
+    spatial_scale: float = 1.0,
+    sampling_ratio: int = -1,
+) -> Tensor:
     """
     Performs Position-Sensitive Region of Interest (RoI) Align operator
     mentioned in Light-Head R-CNN.
+
     Arguments:
         input (Tensor[N, C, H, W]): input tensor
         boxes (Tensor[K, 5] or List[Tensor[L, 4]]): the box coordinates in (x1, y1, x2, y2)
@@ -27,6 +33,7 @@ def ps_roi_align(input, boxes, output_size, spatial_scale=1.0, sampling_ratio=-1
             then exactly sampling_ratio x sampling_ratio grid points are used.
             If <= 0, then an adaptive number of grid points are used (computed as
             ceil(roi_width / pooled_w), and likewise for height). Default: -1
+
     Returns:
         output (Tensor[K, C, output_size[0], output_size[1]])
     """
@@ -46,17 +53,22 @@ class PSRoIAlign(nn.Module):
     """
     See ps_roi_align
     """
-    def __init__(self, output_size, spatial_scale, sampling_ratio):
+    def __init__(
+        self,
+        output_size: int,
+        spatial_scale: float,
+        sampling_ratio: int,
+    ):
         super(PSRoIAlign, self).__init__()
         self.output_size = output_size
         self.spatial_scale = spatial_scale
         self.sampling_ratio = sampling_ratio
 
-    def forward(self, input, rois):
+    def forward(self, input: Tensor, rois: Tensor) -> Tensor:
         return ps_roi_align(input, rois, self.output_size, self.spatial_scale,
                             self.sampling_ratio)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         tmpstr = self.__class__.__name__ + '('
         tmpstr += 'output_size=' + str(self.output_size)
         tmpstr += ', spatial_scale=' + str(self.spatial_scale)

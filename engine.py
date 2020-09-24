@@ -3,7 +3,7 @@ import sys
 import time
 import torch
 
-import torchvision.models.detection.mask_rcnn
+import models.mask_rcnn
 
 from coco_utils import get_coco_api_from_dataset
 from coco_eval import CocoEvaluator
@@ -52,15 +52,17 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq):
         metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
+    return metric_logger
+
 
 def _get_iou_types(model):
     model_without_ddp = model
     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
         model_without_ddp = model.module
     iou_types = ["bbox"]
-    if isinstance(model_without_ddp, torchvision.models.detection.MaskRCNN):
+    if isinstance(model_without_ddp, models.MaskRCNN):
         iou_types.append("segm")
-    if isinstance(model_without_ddp, torchvision.models.detection.KeypointRCNN):
+    if isinstance(model_without_ddp, models.KeypointRCNN):
         iou_types.append("keypoints")
     return iou_types
 
@@ -79,13 +81,12 @@ def evaluate(model, data_loader, device):
     iou_types = _get_iou_types(model)
     coco_evaluator = CocoEvaluator(coco, iou_types)
 
-    for image, targets in metric_logger.log_every(data_loader, 100, header):
-        image = list(img.to(device) for img in image)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+    for images, targets in metric_logger.log_every(data_loader, 100, header):
+        images = list(img.to(device) for img in images)
 
         torch.cuda.synchronize()
         model_time = time.time()
-        outputs = model(image)
+        outputs = model(images)
 
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time

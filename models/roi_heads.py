@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from ops import boxes as box_ops
+
 from ops import roi_align
 
 from . import _utils as det_utils
@@ -16,11 +17,13 @@ def fastrcnn_loss(class_logits, box_regression, labels, regression_targets):
     # type: (Tensor, Tensor, List[Tensor], List[Tensor]) -> Tuple[Tensor, Tensor]
     """
     Computes the loss for Faster R-CNN.
+
     Arguments:
         class_logits (Tensor)
         box_regression (Tensor)
         labels (list[BoxList])
         regression_targets (Tensor)
+
     Returns:
         classification_loss (Tensor)
         box_loss (Tensor)
@@ -57,10 +60,12 @@ def maskrcnn_inference(x, labels):
     by taking the mask corresponding to the class with max
     probability (which are of fixed size and directly output
     by the CNN) and return the masks in the mask field of the BoxList.
+
     Arguments:
         x (Tensor): the mask logits
         labels (list[BoxList]): bounding boxes that are used as
             reference, one for ech image
+
     Returns:
         results (list[BoxList]): one BoxList for each image, containing
             the extra field mask
@@ -100,6 +105,7 @@ def maskrcnn_loss(mask_logits, proposals, gt_masks, gt_labels, mask_matched_idxs
         proposals (list[BoxList])
         mask_logits (Tensor)
         targets (list[BoxList])
+
     Return:
         mask_loss (Tensor): scalar tensor containing the loss
     """

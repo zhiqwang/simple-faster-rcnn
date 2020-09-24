@@ -4,6 +4,7 @@ Implements the Generalized R-CNN framework
 """
 
 from collections import OrderedDict
+from typing import Union
 import torch
 from torch import nn
 import warnings
@@ -14,6 +15,7 @@ from torch import Tensor
 class GeneralizedRCNN(nn.Module):
     """
     Main class for Generalized R-CNN.
+
     Arguments:
         backbone (nn.Module):
         rpn (nn.Module):
@@ -34,7 +36,7 @@ class GeneralizedRCNN(nn.Module):
 
     @torch.jit.unused
     def eager_outputs(self, losses, detections):
-        # type: (Dict[str, Tensor], List[Dict[str, Tensor]]) -> Tuple[Dict[str, Tensor], List[Dict[str, Tensor]]]
+        # type: (Dict[str, Tensor], List[Dict[str, Tensor]]) -> Union[Dict[str, Tensor], List[Dict[str, Tensor]]]
         if self.training:
             return losses
 
@@ -46,11 +48,13 @@ class GeneralizedRCNN(nn.Module):
         Arguments:
             images (list[Tensor]): images to be processed
             targets (list[Dict[Tensor]]): ground-truth boxes present in the image (optional)
+
         Returns:
             result (list[BoxList] or dict[Tensor]): the output from the model.
                 During training, it returns a dict[Tensor] which contains the losses.
                 During testing, it returns list[BoxList] contains additional fields
                 like `scores`, `labels` and `mask` (for Mask R-CNN models).
+
         """
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
@@ -82,11 +86,11 @@ class GeneralizedRCNN(nn.Module):
                 boxes = target["boxes"]
                 degenerate_boxes = boxes[:, 2:] <= boxes[:, :2]
                 if degenerate_boxes.any():
-                    # print the first degenrate box
+                    # print the first degenerate box
                     bb_idx = degenerate_boxes.any(dim=1).nonzero().view(-1)[0]
                     degen_bb: List[float] = boxes[bb_idx].tolist()
                     raise ValueError("All bounding boxes should have positive height and width."
-                                     " Found invaid box {} for target at index {}."
+                                     " Found invalid box {} for target at index {}."
                                      .format(degen_bb, target_idx))
 
         features = self.backbone(images.tensors)

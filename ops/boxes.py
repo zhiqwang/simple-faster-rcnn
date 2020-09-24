@@ -4,18 +4,20 @@ from torch import Tensor
 import torchvision
 
 
-def nms(boxes, scores, iou_threshold):
-    # type: (Tensor, Tensor, float) -> Tensor
+def nms(boxes: Tensor, scores: Tensor, iou_threshold: float) -> Tensor:
     """
     Performs non-maximum suppression (NMS) on the boxes according
     to their intersection-over-union (IoU).
+
     NMS iteratively removes lower scoring boxes which have an
     IoU greater than iou_threshold with another (higher scoring)
     box.
+
     If multiple boxes have the exact same score and satisfy the IoU
     criterion with respect to a reference box, the selected box is
     not guaranteed to be the same between CPU and GPU. This is similar
     to the behavior of argsort in PyTorch when repeated values are present.
+
     Parameters
     ----------
     boxes : Tensor[N, 4])
@@ -26,6 +28,7 @@ def nms(boxes, scores, iou_threshold):
     iou_threshold : float
         discards all overlapping
         boxes with IoU > iou_threshold
+
     Returns
     -------
     keep : Tensor
@@ -37,12 +40,18 @@ def nms(boxes, scores, iou_threshold):
 
 
 @torch.jit._script_if_tracing
-def batched_nms(boxes, scores, idxs, iou_threshold):
-    # type: (Tensor, Tensor, Tensor, float) -> Tensor
+def batched_nms(
+    boxes: Tensor,
+    scores: Tensor,
+    idxs: Tensor,
+    iou_threshold: float,
+) -> Tensor:
     """
     Performs non-maximum suppression in a batched fashion.
+
     Each index value correspond to a category, and NMS
     will not be applied between elements of different categories.
+
     Parameters
     ----------
     boxes : Tensor[N, 4]
@@ -55,6 +64,7 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     iou_threshold : float
         discards all overlapping boxes
         with IoU > iou_threshold
+
     Returns
     -------
     keep : Tensor
@@ -76,13 +86,14 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
         return keep
 
 
-def remove_small_boxes(boxes, min_size):
-    # type: (Tensor, float) -> Tensor
+def remove_small_boxes(boxes: Tensor, min_size: float) -> Tensor:
     """
     Remove boxes which contains at least one side smaller than min_size.
+
     Arguments:
         boxes (Tensor[N, 4]): boxes in (x1, y1, x2, y2) format
         min_size (float): minimum size
+
     Returns:
         keep (Tensor[K]): indices of the boxes that have both sides
             larger than min_size
@@ -93,13 +104,14 @@ def remove_small_boxes(boxes, min_size):
     return keep
 
 
-def clip_boxes_to_image(boxes, size):
-    # type: (Tensor, Tuple[int, int]) -> Tensor
+def clip_boxes_to_image(boxes: Tensor, size: Tuple[int, int]) -> Tensor:
     """
     Clip boxes so that they lie inside an image of size `size`.
+
     Arguments:
         boxes (Tensor[N, 4]): boxes in (x1, y1, x2, y2) format
         size (Tuple[height, width]): size of the image
+
     Returns:
         clipped_boxes (Tensor[N, 4])
     """
@@ -121,13 +133,15 @@ def clip_boxes_to_image(boxes, size):
     return clipped_boxes.reshape(boxes.shape)
 
 
-def box_area(boxes):
+def box_area(boxes: Tensor) -> Tensor:
     """
     Computes the area of a set of bounding boxes, which are specified by its
     (x1, y1, x2, y2) coordinates.
+
     Arguments:
         boxes (Tensor[N, 4]): boxes for which the area will be computed. They
             are expected to be in (x1, y1, x2, y2) format
+
     Returns:
         area (Tensor[N]): area for each box
     """
@@ -136,13 +150,16 @@ def box_area(boxes):
 
 # implementation from https://github.com/kuangliu/torchcv/blob/master/torchcv/utils/box.py
 # with slight modifications
-def box_iou(boxes1, boxes2):
+def box_iou(boxes1: Tensor, boxes2: Tensor) -> Tensor:
     """
     Return intersection-over-union (Jaccard index) of boxes.
+
     Both sets of boxes are expected to be in (x1, y1, x2, y2) format.
+
     Arguments:
         boxes1 (Tensor[N, 4])
         boxes2 (Tensor[M, 4])
+
     Returns:
         iou (Tensor[N, M]): the NxM matrix containing the pairwise
             IoU values for every element in boxes1 and boxes2

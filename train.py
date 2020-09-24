@@ -25,6 +25,7 @@ import torch
 import torch.utils.data
 
 import models
+import models.mask_rcnn
 
 from coco_utils import get_coco, get_coco_kp
 
@@ -37,7 +38,7 @@ import transforms as T
 
 def get_dataset(name, image_set, transform, data_path):
     paths = {
-        "coco": (data_path, get_coco, 7),
+        "coco": (data_path, get_coco, 91),
         "coco_kp": (data_path, get_coco_kp, 2)
     }
     p, ds_fn, num_classes = paths[name]
@@ -91,10 +92,8 @@ def main(args):
         collate_fn=utils.collate_fn)
 
     print("Creating model")
-    model = models.__dict__[args.model](
-        num_classes=num_classes,
-        pretrained=args.pretrained,
-    )
+    model = models.__dict__[args.model](num_classes=num_classes,
+                                        pretrained=args.pretrained)
     model.to(device)
 
     model_without_ddp = model
@@ -114,6 +113,7 @@ def main(args):
         model_without_ddp.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        args.start_epoch = checkpoint['epoch'] + 1
 
     if args.test_only:
         evaluate(model, data_loader_test, device=device)
@@ -121,7 +121,7 @@ def main(args):
 
     print("Start training")
     start_time = time.time()
-    for epoch in range(args.epochs):
+    for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
         train_one_epoch(model, optimizer, data_loader, device, epoch, args.print_freq)
@@ -131,7 +131,8 @@ def main(args):
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler.state_dict(),
-                'args': args},
+                'args': args,
+                'epoch': epoch},
                 os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
 
         # evaluate after every epoch
@@ -147,7 +148,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=__doc__)
 
-    parser.add_argument('--data-path', default='./data-bin/pinochle/', help='dataset')
+    parser.add_argument('--data-path', default='/data-bin/COCO/022719/', help='dataset')
     parser.add_argument('--dataset', default='coco', help='dataset')
     parser.add_argument('--model', default='maskrcnn_resnet50_fpn', help='model')
     parser.add_argument('--device', default='cuda', help='device')
@@ -169,8 +170,9 @@ if __name__ == "__main__":
     parser.add_argument('--lr-steps', default=[16, 22], nargs='+', type=int, help='decrease lr every step-size epochs')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--print-freq', default=20, type=int, help='print frequency')
-    parser.add_argument('--output-dir', default='./checkpoints', help='path where to save')
+    parser.add_argument('--output-dir', default='checkpoints', help='path where to save')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
+    parser.add_argument('--start_epoch', default=0, type=int, help='start epoch')
     parser.add_argument('--aspect-ratio-group-factor', default=3, type=int)
     parser.add_argument(
         "--test-only",
