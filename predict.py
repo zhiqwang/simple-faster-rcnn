@@ -4,7 +4,7 @@ import torch
 
 
 def select_top_predictions(predictions, threshold):
-    idx = (predictions['scores'] > threshold).nonzero().squeeze(1)
+    idx = torch.where(predictions['scores'] > threshold)[0]
     new_predictions = {}
     for k, v in predictions.items():
         new_predictions[k] = v[idx]
