@@ -21,6 +21,6 @@ class ImageList(object):
         self.tensors = tensors
         self.image_sizes = image_sizes
 
-    def to(self, device: torch.device) -> 'ImageList':
+    def to(self, device) -> 'ImageList':
         cast_tensor = self.tensors.to(device)
         return ImageList(cast_tensor, self.image_sizes)

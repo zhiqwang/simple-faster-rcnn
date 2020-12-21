@@ -1,14 +1,10 @@
-from collections import OrderedDict
-
-import torch
 from torch import nn
 import torch.nn.functional as F
 
-from torchvision.ops import misc as misc_nn_ops
 from torchvision.ops import MultiScaleRoIAlign
+from torchvision.models.utils import load_state_dict_from_url
 
 from ._utils import overwrite_eps
-from ..utils import load_state_dict_from_url
 
 from .anchor_utils import AnchorGenerator
 from .generalized_rcnn import GeneralizedRCNN
