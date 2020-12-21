@@ -1,7 +1,9 @@
-from torch import nn
-from ops.feature_pyramid_network import FeaturePyramidNetwork, LastLevelMaxPool
+import warnings
 
-from ops import misc as misc_nn_ops
+from torch import nn
+from torchvision.ops.feature_pyramid_network import FeaturePyramidNetwork, LastLevelMaxPool
+
+from torchvision.ops import misc as misc_nn_ops
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.models import resnet
 
@@ -24,13 +26,17 @@ class BackboneWithFPN(nn.Module):
     Attributes:
         out_channels (int): the number of channels in the FPN
     """
-    def __init__(self, backbone, return_layers, in_channels_list, out_channels):
+    def __init__(self, backbone, return_layers, in_channels_list, out_channels, extra_blocks=None):
         super(BackboneWithFPN, self).__init__()
+
+        if extra_blocks is None:
+            extra_blocks = LastLevelMaxPool()
+
         self.body = IntermediateLayerGetter(backbone, return_layers=return_layers)
         self.fpn = FeaturePyramidNetwork(
             in_channels_list=in_channels_list,
             out_channels=out_channels,
-            extra_blocks=LastLevelMaxPool(),
+            extra_blocks=extra_blocks,
         )
         self.out_channels = out_channels
 
@@ -40,7 +46,14 @@ class BackboneWithFPN(nn.Module):
         return x
 
 
-def resnet_fpn_backbone(backbone_name, pretrained, norm_layer=misc_nn_ops.FrozenBatchNorm2d, trainable_layers=3):
+def resnet_fpn_backbone(
+    backbone_name,
+    pretrained,
+    norm_layer=misc_nn_ops.FrozenBatchNorm2d,
+    trainable_layers=3,
+    returned_layers=None,
+    extra_blocks=None
+):
     """
     Constructs a specified ResNet backbone with FPN on top. Freezes the specified number of layers in the backbone.
 
@@ -81,14 +94,31 @@ def resnet_fpn_backbone(backbone_name, pretrained, norm_layer=misc_nn_ops.Frozen
         if all([not name.startswith(layer) for layer in layers_to_train]):
             parameter.requires_grad_(False)
 
-    return_layers = {'layer1': '0', 'layer2': '1', 'layer3': '2', 'layer4': '3'}
+    if extra_blocks is None:
+        extra_blocks = LastLevelMaxPool()
+
+    if returned_layers is None:
+        returned_layers = [1, 2, 3, 4]
+    assert min(returned_layers) > 0 and max(returned_layers) < 5
+    return_layers = {f'layer{k}': str(v) for v, k in enumerate(returned_layers)}
 
     in_channels_stage2 = backbone.inplanes // 8
-    in_channels_list = [
-        in_channels_stage2,
-        in_channels_stage2 * 2,
-        in_channels_stage2 * 4,
-        in_channels_stage2 * 8,
-    ]
+    in_channels_list = [in_channels_stage2 * 2 ** (i - 1) for i in returned_layers]
     out_channels = 256
-    return BackboneWithFPN(backbone, return_layers, in_channels_list, out_channels)
+    return BackboneWithFPN(backbone, return_layers, in_channels_list, out_channels, extra_blocks=extra_blocks)
+
+
+def _validate_resnet_trainable_layers(pretrained, trainable_backbone_layers):
+    # dont freeze any layers if pretrained model or backbone is not used
+    if not pretrained:
+        if trainable_backbone_layers is not None:
+            warnings.warn(
+                "Changing trainable_backbone_layers has not effect if "
+                "neither pretrained nor pretrained_backbone have been set to True, "
+                "falling back to trainable_backbone_layers=5 so that all layers are trainable")
+        trainable_backbone_layers = 5
+    # by default, freeze first 2 blocks following Faster R-CNN
+    if trainable_backbone_layers is None:
+        trainable_backbone_layers = 3
+    assert trainable_backbone_layers <= 5 and trainable_backbone_layers >= 0
+    return trainable_backbone_layers
